@@ -5,6 +5,17 @@ import multer from "multer";
 import { z } from "zod";
 import { distDir } from "./config.js";
 import { appendRadiologyAuditEntry, getRadiologyAuditEntries } from "./lib/audit-store.js";
+import { findDemoUser, issueDemoToken, normalizeRole, parseDemoToken } from "./lib/demo-auth.js";
+import {
+  createDemoStudy,
+  getDemoStudy,
+  listDemoStudySummaries,
+  saveDemoAiReport,
+  saveDemoClinical,
+  saveDemoRadiology,
+  updateDemoPatient,
+  uploadDemoStudyImages,
+} from "./lib/demo-store.js";
 import { requestExternal, requestExternalSafely, uploadExternalFile } from "./lib/external-api.js";
 import { HttpError, isHttpError } from "./lib/http-error.js";
 import {
@@ -152,7 +163,45 @@ function normalizeUserPayload(rawUser, fallback = {}) {
   return {
     username: rawUser?.username ?? fallback.username ?? "",
     fullName: rawUser?.full_name ?? rawUser?.fullName ?? fallback.fullName ?? "",
-    role: rawUser?.role ?? fallback.role ?? "",
+    role: normalizeRole(rawUser?.role ?? fallback.role ?? ""),
+  };
+}
+
+function requireSession(request) {
+  const token = requireAuthToken(request);
+  const demoUser = parseDemoToken(token);
+
+  if (demoUser) {
+    return {
+      kind: "demo",
+      user: demoUser,
+      token,
+    };
+  }
+
+  return {
+    kind: "external",
+    token,
+  };
+}
+
+async function resolveCurrentUser(session, fallback = {}) {
+  if (session.kind === "demo") {
+    return normalizeUserPayload(session.user, fallback);
+  }
+
+  return normalizeUserPayload(await fetchCurrentUser(session.token), fallback);
+}
+
+async function getDemoStudyDashboard(crNo) {
+  const [dashboard, auditLog] = await Promise.all([
+    getDemoStudy(crNo),
+    getRadiologyAuditEntries(crNo),
+  ]);
+
+  return {
+    ...dashboard,
+    auditLog,
   };
 }
 
@@ -177,34 +226,55 @@ export function createApp() {
       })
       .parse(request.body);
 
-    const session = await requestExternal({
-      pathname: "/auth/login",
-      method: "POST",
-      body: credentials,
-    });
+    try {
+      const session = await requestExternal({
+        pathname: "/auth/login",
+        method: "POST",
+        body: credentials,
+      });
 
-    response.json({
-      accessToken: session.access_token,
-      tokenType: session.token_type,
-      role: session.role,
-      fullName: session.full_name,
-      username: credentials.username,
-    });
+      response.json({
+        accessToken: session.access_token,
+        tokenType: session.token_type,
+        role: normalizeRole(session.role),
+        fullName: session.full_name,
+        username: credentials.username,
+      });
+      return;
+    } catch (error) {
+      const demoUser = findDemoUser(credentials.username, credentials.password);
+
+      if (demoUser && isHttpError(error) && error.status >= 500) {
+        response.json({
+          accessToken: issueDemoToken(demoUser),
+          tokenType: "bearer",
+          role: demoUser.role,
+          fullName: demoUser.fullName,
+          username: demoUser.username,
+          demoMode: true,
+        });
+        return;
+      }
+
+      throw error;
+    }
   });
 
   app.get("/api/auth/me", async (request, response) => {
-    const token = requireAuthToken(request);
-    const profile = await fetchCurrentUser(token);
-
-    response.json(
-      normalizeUserPayload(profile, {
-        role: profile?.role,
-      }),
-    );
+    const session = requireSession(request);
+    const profile = await resolveCurrentUser(session);
+    response.json(profile);
   });
 
   app.get("/api/studies", async (request, response) => {
-    const token = requireAuthToken(request);
+    const session = requireSession(request);
+
+    if (session.kind === "demo") {
+      response.json(await listDemoStudySummaries());
+      return;
+    }
+
+    const token = session.token;
     const patients = await requestExternal({
       pathname: "/patients",
       token,
@@ -222,8 +292,20 @@ export function createApp() {
   });
 
   app.post("/api/studies", upload.array("files"), async (request, response) => {
-    const token = requireAuthToken(request);
+    const session = requireSession(request);
     const payload = createStudySchema.parse(request.body);
+    const files = Array.isArray(request.files) ? request.files : [];
+
+    if (session.kind === "demo") {
+      const dashboard = await createDemoStudy({
+        ...payload,
+        files,
+      });
+      response.status(201).json(dashboard);
+      return;
+    }
+
+    const token = session.token;
 
     await requestExternal({
       pathname: "/patients",
@@ -259,7 +341,6 @@ export function createApp() {
       }),
     ]);
 
-    const files = Array.isArray(request.files) ? request.files : [];
     await Promise.all(
       files.map((file) =>
         uploadExternalFile({
@@ -279,14 +360,28 @@ export function createApp() {
   });
 
   app.get("/api/studies/:crNo", async (request, response) => {
-    const token = requireAuthToken(request);
+    const session = requireSession(request);
+
+    if (session.kind === "demo") {
+      response.json(await getDemoStudyDashboard(request.params.crNo));
+      return;
+    }
+
+    const token = session.token;
     const dashboard = await fetchStudyDashboard(token, request.params.crNo);
     response.json(dashboard);
   });
 
   app.put("/api/studies/:crNo/patient", async (request, response) => {
-    const token = requireAuthToken(request);
+    const session = requireSession(request);
     const payload = updatePatientSchema.parse(request.body);
+
+    if (session.kind === "demo") {
+      response.json(await updateDemoPatient(request.params.crNo, payload));
+      return;
+    }
+
+    const token = session.token;
 
     await requestExternal({
       pathname: `/patients/${encodeURIComponent(request.params.crNo)}`,
@@ -305,12 +400,19 @@ export function createApp() {
   });
 
   app.post("/api/studies/:crNo/images", upload.array("files"), async (request, response) => {
-    const token = requireAuthToken(request);
+    const session = requireSession(request);
     const files = Array.isArray(request.files) ? request.files : [];
 
     if (!files.length) {
       throw new HttpError(400, "Upload at least one study file.");
     }
+
+    if (session.kind === "demo") {
+      response.json(await uploadDemoStudyImages(request.params.crNo, files));
+      return;
+    }
+
+    const token = session.token;
 
     await Promise.all(
       files.map((file) =>
@@ -331,10 +433,18 @@ export function createApp() {
   });
 
   app.put("/api/studies/:crNo/clinical", async (request, response) => {
-    const token = requireAuthToken(request);
+    const session = requireSession(request);
     pulmonarySchema.parse(request.body);
 
     const payload = sanitizePulmonaryPayload(request.body);
+
+    if (session.kind === "demo") {
+      const currentUser = await resolveCurrentUser(session);
+      response.json(await saveDemoClinical(request.params.crNo, payload, currentUser.fullName));
+      return;
+    }
+
+    const token = session.token;
 
     await requestExternal({
       pathname: `/pulmonary/${encodeURIComponent(request.params.crNo)}`,
@@ -355,11 +465,39 @@ export function createApp() {
   });
 
   app.put("/api/studies/:crNo/radiology", async (request, response) => {
-    const token = requireAuthToken(request);
+    const session = requireSession(request);
     const payload = radiologySchema.parse(request.body);
-    const currentUser = normalizeUserPayload(await fetchCurrentUser(token), {
+    const currentUser = await resolveCurrentUser(session, {
       fullName: payload.radiologistName,
     });
+    const signedReport = appendRadiologistSignature(
+      payload.radiologicalImpression,
+      currentUser.fullName,
+    );
+
+    if (session.kind === "demo") {
+      const existingStudy = await getDemoStudy(request.params.crNo);
+      const auditLog = await appendRadiologyAuditEntry(request.params.crNo, {
+        timestamp: new Date().toISOString(),
+        userName: currentUser.fullName,
+        userRole: currentUser.role,
+        action: existingStudy.radiologyReport ? "Updated radiology report" : "Created radiology report",
+      });
+
+      const dashboard = await saveDemoRadiology(
+        request.params.crNo,
+        signedReport,
+        currentUser.fullName,
+      );
+
+      response.json({
+        ...dashboard,
+        auditLog,
+      });
+      return;
+    }
+
+    const token = session.token;
 
     const existingReports = await requestExternalSafely(
       {
@@ -367,11 +505,6 @@ export function createApp() {
         token,
       },
       [],
-    );
-
-    const signedReport = appendRadiologistSignature(
-      payload.radiologicalImpression,
-      currentUser.fullName,
     );
 
     const auditLog = await appendRadiologyAuditEntry(request.params.crNo, {
@@ -405,7 +538,7 @@ export function createApp() {
   });
 
   app.post("/api/studies/:crNo/ai-report", upload.single("file"), async (request, response) => {
-    const token = requireAuthToken(request);
+    const session = requireSession(request);
     const file = request.file;
 
     if (!file) {
@@ -415,6 +548,13 @@ export function createApp() {
     if (!isPdfFile(file)) {
       throw new HttpError(400, "AI reports must be uploaded as PDF files only.");
     }
+
+    if (session.kind === "demo") {
+      response.json(await saveDemoAiReport(request.params.crNo, file));
+      return;
+    }
+
+    const token = session.token;
 
     await uploadExternalFile({
       pathname: `/dectrocel/${encodeURIComponent(request.params.crNo)}/upload-ai-report`,

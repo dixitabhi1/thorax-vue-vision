@@ -57,9 +57,14 @@ Required Vercel environment variables:
 EXTERNAL_API_BASE_URL=http://54.252.216.233:8042
 EXTERNAL_API_KEY=your-issued-api-key
 RADIOLOGY_AUDIT_LOG_PATH=/tmp/radiology-audit.json
+DEMO_STORE_PATH=/tmp/demo-store.json
 ```
 
 If `EXTERNAL_API_KEY` is missing in Vercel, login and all `/api/*` calls will fail.
+
+## Demo Fallback
+
+When the upstream `/auth/login` endpoint returns a server error for a known demo account, the proxy now falls back to local demo sessions and local study storage so the app remains usable for workflow testing.
 
 4. Production-style run:
 

@@ -7,8 +7,12 @@ const __dirname = path.dirname(__filename);
 export const projectRoot = path.resolve(__dirname, "..");
 export const distDir = path.join(projectRoot, "dist");
 export const port = Number(process.env.PORT ?? 3001);
+const defaultWritableDir = process.env.RUNTIME_STORAGE_DIR ?? (process.env.VERCEL ? "/tmp" : path.join(projectRoot, "server", "data"));
 export const externalApiBaseUrl = (process.env.EXTERNAL_API_BASE_URL ?? "http://54.252.216.233:8042").replace(/\/+$/, "");
 export const externalApiKey = process.env.EXTERNAL_API_KEY ?? "";
 export const auditLogPath =
   process.env.RADIOLOGY_AUDIT_LOG_PATH ??
-  path.join(projectRoot, "server", "data", "radiology-audit.json");
+  path.join(defaultWritableDir, "radiology-audit.json");
+export const demoStorePath =
+  process.env.DEMO_STORE_PATH ??
+  path.join(defaultWritableDir, "demo-store.json");
