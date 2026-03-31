@@ -50,7 +50,7 @@ const App = () => (
               }
             />
             <Route
-              path="/patients/:studyId"
+              path="/patients/:crNo"
               element={
                 <ProtectedRoute permission="view:patients">
                   <AppLayout><PatientProfilePage /></AppLayout>

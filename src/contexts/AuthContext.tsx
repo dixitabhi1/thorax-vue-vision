@@ -1,20 +1,20 @@
-import React, { createContext, useContext, useState, useCallback } from "react";
-
-export type UserRole = "ADMIN" | "DECTROCEL" | "RADIOLOGY" | "PULMONARY";
+import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { api, clearStoredSession, loadStoredSession, saveStoredSession, UserRole } from "@/lib/api";
 
 export interface User {
-  id: string;
   name: string;
-  email: string;
+  username: string;
   role: UserRole;
+  accessToken: string;
+  tokenType: string;
 }
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string, role: UserRole) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
+  isLoading: boolean;
   hasPermission: (action: string) => boolean;
 }
 
@@ -52,40 +52,73 @@ const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   ],
 };
 
-// Mock users for demo
-const MOCK_USERS: Array<User & { password: string }> = [
-  { id: "1", name: "Dr. Admin", email: "admin@sgpgims.ac.in", password: "admin123", role: "ADMIN" },
-  { id: "2", name: "Dr. Sharma", email: "dectrocel@sgpgims.ac.in", password: "dect123", role: "DECTROCEL" },
-  { id: "3", name: "Dr. Gupta", email: "radiology@sgpgims.ac.in", password: "rad123", role: "RADIOLOGY" },
-  { id: "4", name: "Dr. Verma", email: "pulmonary@sgpgims.ac.in", password: "pulm123", role: "PULMONARY" },
-];
+function toUser(session: ReturnType<typeof loadStoredSession>): User | null {
+  if (!session) {
+    return null;
+  }
+
+  return {
+    name: session.fullName,
+    username: session.username,
+    role: session.role,
+    accessToken: session.accessToken,
+    tokenType: session.tokenType,
+  };
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => {
-    const stored = localStorage.getItem("ncg_user");
-    return stored ? JSON.parse(stored) : null;
-  });
+  const [user, setUser] = useState<User | null>(() => toUser(loadStoredSession()));
+  const [isLoading, setIsLoading] = useState(true);
 
-  const login = useCallback(async (email: string, password: string) => {
-    // Simulate API call
-    await new Promise((r) => setTimeout(r, 500));
-    const found = MOCK_USERS.find((u) => u.email === email && u.password === password);
-    if (!found) throw new Error("Invalid email or password");
-    const { password: _, ...userData } = found;
-    setUser(userData);
-    localStorage.setItem("ncg_user", JSON.stringify(userData));
+  useEffect(() => {
+    const storedSession = loadStoredSession();
+
+    if (!storedSession) {
+      setIsLoading(false);
+      return;
+    }
+
+    api.me()
+      .then((profile) => {
+        const nextUser: User = {
+          name: profile.fullName || storedSession.fullName,
+          username: profile.username || storedSession.username,
+          role: profile.role || storedSession.role,
+          accessToken: storedSession.accessToken,
+          tokenType: storedSession.tokenType,
+        };
+        setUser(nextUser);
+        saveStoredSession({
+          ...storedSession,
+          fullName: nextUser.name,
+          username: nextUser.username,
+          role: nextUser.role,
+        });
+      })
+      .catch(() => {
+        clearStoredSession();
+        setUser(null);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
   }, []);
 
-  const register = useCallback(async (name: string, email: string, _password: string, role: UserRole) => {
-    await new Promise((r) => setTimeout(r, 500));
-    const newUser: User = { id: crypto.randomUUID(), name, email, role };
-    setUser(newUser);
-    localStorage.setItem("ncg_user", JSON.stringify(newUser));
+  const login = useCallback(async (username: string, password: string) => {
+    const session = await api.login(username, password);
+    saveStoredSession(session);
+    setUser({
+      name: session.fullName,
+      username: session.username,
+      role: session.role,
+      accessToken: session.accessToken,
+      tokenType: session.tokenType,
+    });
   }, []);
 
   const logout = useCallback(() => {
     setUser(null);
-    localStorage.removeItem("ncg_user");
+    clearStoredSession();
   }, []);
 
   const hasPermission = useCallback(
@@ -97,7 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, isAuthenticated: !!user, hasPermission }}>
+    <AuthContext.Provider value={{ user, login, logout, isAuthenticated: !!user, isLoading, hasPermission }}>
       {children}
     </AuthContext.Provider>
   );

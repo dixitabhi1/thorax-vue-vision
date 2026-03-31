@@ -1,38 +1,71 @@
+import { useMemo, useRef, useState } from "react";
+import { Download, Maximize2, RotateCw, Upload, ZoomIn, ZoomOut } from "lucide-react";
+import { StudyFile } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Upload, ZoomIn, ZoomOut, RotateCw, Maximize2 } from "lucide-react";
-import { useState } from "react";
-import { useToast } from "@/hooks/use-toast";
 
 interface ImageViewerProps {
-  images: string[];
+  files: StudyFile[];
   canUpload: boolean;
+  onUpload: (files: File[]) => Promise<unknown>;
+  uploading: boolean;
 }
 
-export function ImageViewer({ images, canUpload }: ImageViewerProps) {
+function isPreviewableImage(file: StudyFile | undefined) {
+  if (!file) {
+    return false;
+  }
+
+  const contentType = file.contentType?.toLowerCase() ?? "";
+  const lowerCaseName = file.name.toLowerCase();
+
+  return (
+    contentType.startsWith("image/") ||
+    lowerCaseName.endsWith(".png") ||
+    lowerCaseName.endsWith(".jpg") ||
+    lowerCaseName.endsWith(".jpeg")
+  );
+}
+
+export function ImageViewer({ files, canUpload, onUpload, uploading }: ImageViewerProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
-  const { toast } = useToast();
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
-  const handleUpload = () => {
-    toast({ title: "Upload", description: "Image upload simulated successfully." });
+  const selectedFile = files[selectedIndex];
+  const previewable = isPreviewableImage(selectedFile);
+  const fileSummary = useMemo(
+    () => `${files.length} file${files.length === 1 ? "" : "s"} attached`,
+    [files.length],
+  );
+
+  const handleFileSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files ?? []);
+    if (!selectedFiles.length) {
+      return;
+    }
+
+    await onUpload(selectedFiles);
+    event.target.value = "";
   };
 
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-          <CardTitle className="font-heading text-lg">DICOM Image Viewer</CardTitle>
+          <div>
+            <CardTitle className="font-heading text-lg">Study Files</CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">{fileSummary}</p>
+          </div>
           <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}>
+            <Button variant="outline" size="icon" onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}>
               <ZoomOut className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="icon" onClick={() => setZoom((z) => Math.min(3, z + 0.25))}>
+            <Button variant="outline" size="icon" onClick={() => setZoom((value) => Math.min(3, value + 0.25))}>
               <ZoomIn className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="icon" onClick={() => setRotation((r) => r + 90)}>
+            <Button variant="outline" size="icon" onClick={() => setRotation((value) => value + 90)}>
               <RotateCw className="h-4 w-4" />
             </Button>
             <Button variant="outline" size="icon" onClick={() => { setZoom(1); setRotation(0); }}>
@@ -40,50 +73,70 @@ export function ImageViewer({ images, canUpload }: ImageViewerProps) {
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
-          {images.length > 0 ? (
-            <div className="bg-foreground/5 rounded-lg overflow-hidden flex items-center justify-center min-h-[400px]">
-              <div
-                style={{
-                  transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                  transition: "transform 0.2s ease",
-                }}
-              >
-                <img
-                  src={images[selectedIndex]}
-                  alt={`CT Scan slice ${selectedIndex + 1}`}
-                  className="max-w-full max-h-[500px] object-contain"
-                />
+        <CardContent className="space-y-4">
+          {files.length > 0 ? (
+            <>
+              <div className="bg-foreground/5 rounded-lg overflow-hidden flex items-center justify-center min-h-[400px] p-4">
+                {previewable && selectedFile?.url ? (
+                  <div
+                    style={{
+                      transform: `scale(${zoom}) rotate(${rotation}deg)`,
+                      transition: "transform 0.2s ease",
+                    }}
+                  >
+                    <img
+                      src={selectedFile.url}
+                      alt={selectedFile.name}
+                      className="max-w-full max-h-[500px] object-contain"
+                    />
+                  </div>
+                ) : (
+                  <div className="text-center space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      Preview is not available for this file type.
+                    </p>
+                    {selectedFile?.url && (
+                      <Button variant="outline" asChild>
+                        <a href={selectedFile.url} target="_blank" rel="noopener noreferrer">
+                          <Download className="mr-2 h-4 w-4" />
+                          Download {selectedFile.name}
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
-            </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                {files.map((file, index) => (
+                  <button
+                    key={file.id}
+                    type="button"
+                    onClick={() => setSelectedIndex(index)}
+                    className={`text-left rounded-lg border p-3 transition-colors ${
+                      index === selectedIndex ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
+                    }`}
+                  >
+                    <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {file.fileType || file.kind || "Study file"}
+                      {file.uploadedAt ? ` · ${new Date(file.uploadedAt).toLocaleString()}` : ""}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </>
           ) : (
             <div className="bg-muted rounded-lg flex items-center justify-center min-h-[400px]">
               <div className="text-center space-y-2">
-                <p className="text-muted-foreground">No images uploaded yet</p>
+                <p className="text-muted-foreground">No study files uploaded yet</p>
                 {canUpload && (
-                  <Button variant="outline" onClick={handleUpload}>
+                  <Button variant="outline" onClick={() => uploadInputRef.current?.click()} disabled={uploading}>
                     <Upload className="mr-2 h-4 w-4" />
-                    Upload Images
+                    {uploading ? "Uploading..." : "Upload Study Files"}
                   </Button>
                 )}
               </div>
-            </div>
-          )}
-
-          {/* Thumbnail strip */}
-          {images.length > 1 && (
-            <div className="flex gap-2 mt-4 overflow-x-auto pb-2">
-              {images.map((img, i) => (
-                <button
-                  key={i}
-                  onClick={() => setSelectedIndex(i)}
-                  className={`w-16 h-16 rounded border-2 overflow-hidden shrink-0 transition-colors ${
-                    i === selectedIndex ? "border-primary" : "border-border"
-                  }`}
-                >
-                  <img src={img} alt={`Slice ${i + 1}`} className="w-full h-full object-cover" />
-                </button>
-              ))}
             </div>
           )}
         </CardContent>
@@ -92,11 +145,22 @@ export function ImageViewer({ images, canUpload }: ImageViewerProps) {
       {canUpload && (
         <Card>
           <CardContent className="p-4">
-            <div className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:bg-muted/50 transition-colors">
+            <div className="border-2 border-dashed rounded-lg p-8 text-center hover:bg-muted/50 transition-colors">
               <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-              <p className="text-sm font-medium text-foreground">Upload DICOM Images</p>
-              <p className="text-xs text-muted-foreground mt-1">Drag & drop or click to browse (.dcm files)</p>
-              <Input type="file" className="hidden" multiple accept=".dcm,.dicom" />
+              <p className="text-sm font-medium text-foreground">Upload Study Files</p>
+              <p className="text-xs text-muted-foreground mt-1">Attach DICOM, ZIP, PNG, or JPEG files</p>
+              <input
+                ref={uploadInputRef}
+                type="file"
+                className="hidden"
+                multiple
+                accept=".dcm,.dicom,.zip,.png,.jpg,.jpeg"
+                onChange={handleFileSelection}
+              />
+              <Button variant="outline" className="mt-4" onClick={() => uploadInputRef.current?.click()} disabled={uploading}>
+                <Upload className="mr-2 h-4 w-4" />
+                {uploading ? "Uploading..." : "Browse Files"}
+              </Button>
             </div>
           </CardContent>
         </Card>
