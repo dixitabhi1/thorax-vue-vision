@@ -44,6 +44,23 @@ npm run dev
 - Frontend: `http://localhost:8080`
 - Backend proxy: `http://localhost:3001`
 
+## Vercel Deployment
+
+This repository now includes:
+
+- `api/[...route].js` for serverless `/api/*` handling on Vercel
+- `vercel.json` for API routing plus SPA fallback to `index.html`
+
+Required Vercel environment variables:
+
+```bash
+EXTERNAL_API_BASE_URL=http://54.252.216.233:8042
+EXTERNAL_API_KEY=your-issued-api-key
+RADIOLOGY_AUDIT_LOG_PATH=/tmp/radiology-audit.json
+```
+
+If `EXTERNAL_API_KEY` is missing in Vercel, login and all `/api/*` calls will fail.
+
 4. Production-style run:
 
 ```bash
