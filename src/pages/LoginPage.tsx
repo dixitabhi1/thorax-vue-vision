@@ -43,11 +43,8 @@ export default function LoginPage() {
             <Shield className="h-8 w-8 text-primary" />
           </div>
           <h1 className="font-heading text-xl font-bold text-foreground">
-            NCG CT Thorax Study
+            SGPGIMS Dectrocel Study workspace
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Dectrocel SGPGIMS medical imaging workflow
-          </p>
         </div>
 
         <Card>

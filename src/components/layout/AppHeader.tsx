@@ -13,7 +13,7 @@ export function AppHeader() {
         <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
         <div className="h-6 w-px bg-border" />
         <h1 className="font-heading text-sm md:text-base font-semibold tracking-tight text-foreground">
-          NCG CT Thorax Study Dectrocel SGPGIMS
+          SGPGIMS Dectrocel Study workspace
         </h1>
       </div>
       {user && (
