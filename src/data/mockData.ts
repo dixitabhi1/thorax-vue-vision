@@ -14,47 +14,73 @@ export interface Study {
 
 export interface ClinicalParameters {
   studyId: string;
-  chiefComplaint: string;
-  smokingHistory: string;
-  packYears: number;
-  coughDuration: string;
+  // Presenting Complaints
+  cough: string;
   dyspneaGrade: string;
-  sputumProduction: boolean;
+  expectoration: string;
   hemoptysis: boolean;
-  weightLoss: boolean;
-  fev1: number;
-  fvc: number;
-  fev1FvcRatio: number;
-  spo2: number;
-  notes: string;
+  chestTightness: boolean;
+  // Comorbidities
+  t2dm: boolean;
+  htn: boolean;
+  cad: boolean;
+  tb: boolean;
+  covid: boolean;
+  childhoodPneumonia: boolean;
+  // Exposure
+  smoking: string;
+  exposure: string;
+  // Lab Investigations
+  hb: number | null;
+  tlc: number | null;
+  dlcN: number | null;
+  dlcL: number | null;
+  dlcE: number | null;
+  totalIgE: number | null;
+  hba1c: number | null;
+  // Cardiopulmonary
+  pulmHTN: boolean;
+  fev1: number | null;
+  fvc: number | null;
+  fev1FvcRatio: number | null;
+  // CT Findings
+  emphysema: string;
+  bullaeCyst: string;
+  nodulesGGO: string;
+  mediastinalLN: string;
+  pleuralEffusion: boolean;
+  pneumothorax: boolean;
+  // Additional
+  ecg: string;
+  ana: string;
+  ena: string;
+  ra: string;
+  msa: string;
+  sCalcium: number | null;
+  sACE: number | null;
 }
 
 export interface RadiologyReport {
   studyId: string;
   findings: string;
   impression: string;
-  emphysemaScore: string;
-  airTrapping: string;
-  nodules: string;
-  bronchiectasis: string;
-  consolidation: string;
-  pleuralEffusion: boolean;
-  lymphadenopathy: boolean;
   reportedBy: string;
   reportDate: string;
 }
 
+export interface RadiologyAuditEntry {
+  timestamp: string;
+  userId: string;
+  userName: string;
+  action: string;
+}
+
 export interface AIReport {
   studyId: string;
-  emphysemaPercentage: number;
-  airTrappingPercentage: number;
-  lungVolume: number;
-  meanLungDensity: number;
-  noduleCount: number;
-  riskScore: number;
-  classification: string;
-  generatedAt: string;
-  segmentationResults: Record<string, number>;
+  pdfFileName: string;
+  pdfUrl: string;
+  uploadedBy: string;
+  uploadedAt: string;
 }
 
 export const MOCK_STUDIES: Study[] = [
@@ -128,19 +154,43 @@ export const MOCK_STUDIES: Study[] = [
 export const MOCK_CLINICAL: Record<string, ClinicalParameters> = {
   "STD-001": {
     studyId: "STD-001",
-    chiefComplaint: "Chronic cough with breathlessness for 6 months",
-    smokingHistory: "Former smoker",
-    packYears: 30,
-    coughDuration: "6 months",
-    dyspneaGrade: "Grade III (mMRC)",
-    sputumProduction: true,
+    cough: "Chronic productive cough for 6 months",
+    dyspneaGrade: "Grade III",
+    expectoration: "Mucoid, moderate amount",
     hemoptysis: false,
-    weightLoss: true,
+    chestTightness: true,
+    t2dm: true,
+    htn: true,
+    cad: false,
+    tb: false,
+    covid: true,
+    childhoodPneumonia: false,
+    smoking: "Former smoker (30 pack-years)",
+    exposure: "Occupational dust exposure — 15 years in mining",
+    hb: 13.2,
+    tlc: 9800,
+    dlcN: 65,
+    dlcL: 28,
+    dlcE: 4,
+    totalIgE: 185,
+    hba1c: 7.1,
+    pulmHTN: false,
     fev1: 1.8,
     fvc: 3.2,
     fev1FvcRatio: 56.25,
-    spo2: 92,
-    notes: "Patient has history of occupational dust exposure. Family history of COPD.",
+    emphysema: "Centrilobular + paraseptal, bilateral upper lobes",
+    bullaeCyst: "Small subpleural bullae in right apex",
+    nodulesGGO: "Scattered GGO in bilateral lower lobes",
+    mediastinalLN: "No significant lymphadenopathy",
+    pleuralEffusion: false,
+    pneumothorax: false,
+    ecg: "Normal sinus rhythm, no ST changes",
+    ana: "Negative",
+    ena: "Negative",
+    ra: "Negative",
+    msa: "Not done",
+    sCalcium: 9.4,
+    sACE: 42,
   },
 };
 
@@ -149,35 +199,34 @@ export const MOCK_RADIOLOGY: Record<string, RadiologyReport> = {
     studyId: "STD-001",
     findings: "Bilateral upper lobe predominant centrilobular and paraseptal emphysema. Scattered ground glass opacities in lower lobes. No focal consolidation. Trachea and main bronchi patent.",
     impression: "Moderate COPD with emphysematous changes. No evidence of active infection or malignancy.",
-    emphysemaScore: "Moderate (Grade 3)",
-    airTrapping: "Present - predominantly lower lobes",
-    nodules: "No suspicious nodules identified",
-    bronchiectasis: "Mild cylindrical bronchiectasis in right lower lobe",
-    consolidation: "None",
-    pleuralEffusion: false,
-    lymphadenopathy: false,
     reportedBy: "Dr. Gupta",
     reportDate: "2024-12-16",
   },
 };
 
+export const MOCK_RADIOLOGY_AUDIT: Record<string, RadiologyAuditEntry[]> = {
+  "STD-001": [
+    {
+      timestamp: "2024-12-16T10:30:00Z",
+      userId: "3",
+      userName: "Dr. Gupta",
+      action: "Created radiology report",
+    },
+    {
+      timestamp: "2024-12-16T11:15:00Z",
+      userId: "3",
+      userName: "Dr. Gupta",
+      action: "Updated findings and impression",
+    },
+  ],
+};
+
 export const MOCK_AI: Record<string, AIReport> = {
   "STD-001": {
     studyId: "STD-001",
-    emphysemaPercentage: 24.5,
-    airTrappingPercentage: 18.3,
-    lungVolume: 5.8,
-    meanLungDensity: -856,
-    noduleCount: 0,
-    riskScore: 6.2,
-    classification: "Moderate COPD - GOLD Stage II",
-    generatedAt: "2024-12-16T14:30:00Z",
-    segmentationResults: {
-      "Right Upper Lobe": 28.1,
-      "Right Middle Lobe": 12.4,
-      "Right Lower Lobe": 19.7,
-      "Left Upper Lobe": 31.2,
-      "Left Lower Lobe": 16.8,
-    },
+    pdfFileName: "AI_Report_STD-001.pdf",
+    pdfUrl: "/placeholder.svg",
+    uploadedBy: "Dr. Sharma",
+    uploadedAt: "2024-12-16T14:30:00Z",
   },
 };

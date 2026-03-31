@@ -3,19 +3,18 @@ import { MOCK_STUDIES, MOCK_CLINICAL, MOCK_RADIOLOGY, MOCK_AI } from "@/data/moc
 import { useAuth } from "@/contexts/AuthContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ImageViewer } from "@/components/patient/ImageViewer";
 import { ClinicalForm } from "@/components/patient/ClinicalForm";
 import { RadiologyReportView } from "@/components/patient/RadiologyReportView";
 import { AIReportView } from "@/components/patient/AIReportView";
-import { ArrowLeft, User } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 export default function PatientProfilePage() {
   const { studyId } = useParams<{ studyId: string }>();
   const navigate = useNavigate();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
 
   const study = MOCK_STUDIES.find((s) => s.id === studyId);
 
@@ -36,6 +35,8 @@ export default function PatientProfilePage() {
   const clinical = MOCK_CLINICAL[study.id];
   const radiology = MOCK_RADIOLOGY[study.id];
   const aiReport = MOCK_AI[study.id];
+
+  const isAdmin = user?.role === "ADMIN";
 
   return (
     <div className="space-y-6">
@@ -103,11 +104,15 @@ export default function PatientProfilePage() {
             data={radiology}
             canEdit={hasPermission("edit:radiology")}
             studyId={study.id}
+            showAudit={isAdmin}
           />
         </TabsContent>
 
         <TabsContent value="ai">
-          <AIReportView data={aiReport} canEdit={hasPermission("edit:ai-report")} />
+          <AIReportView
+            data={aiReport}
+            canUpload={hasPermission("edit:ai-report")}
+          />
         </TabsContent>
       </Tabs>
     </div>
