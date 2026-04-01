@@ -20,7 +20,8 @@ import {
 
 const NAV_ITEMS = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, permission: "view:dashboard" },
-  { title: "CT Thorax Study", url: "/studies", icon: FileSearch, permission: "view:studies" },
+  { title: "CT Thorax Study", url: "/studies/ct-thorax", icon: FileSearch, permission: "view:studies" },
+  { title: "NCG Study", url: "/studies/ncg", icon: FileSearch, permission: "view:studies" },
   { title: "Patient Records", url: "/patients", icon: UserRound, permission: "view:patients" },
 ];
 

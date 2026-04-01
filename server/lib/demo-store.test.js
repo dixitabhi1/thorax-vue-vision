@@ -8,6 +8,7 @@ describe("study cache merge helpers", () => {
   it("preserves cached workflow data when the fresh dashboard is partial", () => {
     const merged = mergeStudyDashboard(
       {
+        workspace: "ct-thorax",
         patientProfile: {
           crNo: "CR-101",
           patientName: "Test Patient",
@@ -33,6 +34,7 @@ describe("study cache merge helpers", () => {
         auditLog: [],
       },
       {
+        workspace: "ct-thorax",
         patientProfile: {
           crNo: "CR-101",
           patientName: "Test Patient",
@@ -94,6 +96,7 @@ describe("study cache merge helpers", () => {
     );
 
     expect(merged.pulmonaryForm.remarks).toBe("Needs pulmonary follow-up");
+    expect(merged.workspace).toBe("ct-thorax");
     expect(merged.radiologyReport?.radiologicalImpression).toContain("Stable thoracic findings");
     expect(merged.aiReport?.name).toBe("ai-report.pdf");
     expect(merged.studyImages).toHaveLength(1);
@@ -104,6 +107,7 @@ describe("study cache merge helpers", () => {
   it("keeps in-progress department state from the latest dashboard", () => {
     const merged = mergeStudyDashboard(
       {
+        workspace: "ncg",
         patientProfile: {
           crNo: "CR-102",
           patientName: "Workflow Patient",
@@ -131,6 +135,7 @@ describe("study cache merge helpers", () => {
       null,
     );
 
+    expect(merged.workspace).toBe("ncg");
     expect(merged.status.aiStatus).toBe("in-progress");
     expect(merged.status.overallStatus).toBe("in-progress");
   });

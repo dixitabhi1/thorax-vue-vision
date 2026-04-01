@@ -2,8 +2,10 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { User } from "lucide-react";
 import { api } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/StatusBadge";
+import { STUDY_WORKSPACES } from "@/lib/study-workspaces";
 
 export default function PatientsPage() {
   const navigate = useNavigate();
@@ -47,6 +49,9 @@ export default function PatientsPage() {
                   <div>
                     <p className="font-medium text-foreground">{study.patientName}</p>
                     <p className="text-xs text-muted-foreground font-mono">{study.crNo}</p>
+                    <Badge variant="outline" className="mt-2 text-[11px]">
+                      {STUDY_WORKSPACES[study.workspace].title}
+                    </Badge>
                   </div>
                 </div>
                 <StatusBadge status={study.status} />

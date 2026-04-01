@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Activity, CheckCircle2, Clock, ArrowRight } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
+import { STUDY_WORKSPACES } from "@/lib/study-workspaces";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -70,6 +71,18 @@ export default function DashboardPage() {
                 Here&apos;s the current thoracic workflow load across pulmonary, radiology, and Dectrocel. Every patient in this
                 view is linked through a live cr_no record.
               </p>
+            </div>
+            <div className="flex flex-wrap gap-2 pt-2">
+              {Object.values(STUDY_WORKSPACES).map((workspace) => (
+                <Button
+                  key={workspace.key}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate(`/studies/${workspace.key}`)}
+                >
+                  {workspace.title}
+                </Button>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -171,6 +184,9 @@ export default function DashboardPage() {
                 <p className="font-medium text-foreground">{study.patientName}</p>
                 <p className="text-sm text-muted-foreground">
                   {study.crNo} | {study.phoneNumber || "Phone not recorded"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {STUDY_WORKSPACES[study.workspace].title}
                 </p>
               </div>
               <StatusBadge status={study.status} />

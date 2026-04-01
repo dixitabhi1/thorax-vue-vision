@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { demoStorePath } from "../config.js";
 import { HttpError } from "./http-error.js";
 import { emptyPulmonaryForm, inferStudyFileType, normalizeStudySummary } from "./normalize.js";
+import { normalizeStudyWorkspace } from "./study-workspaces.js";
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -103,6 +104,7 @@ function rebuildStatus(study) {
 
 function normalizeStoredStudy(study) {
   return rebuildStatus({
+    workspace: normalizeStudyWorkspace(study?.workspace),
     patientProfile: {
       crNo: study?.patientProfile?.crNo ?? "",
       patientName: study?.patientProfile?.patientName ?? "",
@@ -217,6 +219,9 @@ export function mergeStudyDashboard(primary, fallback) {
   }
 
   return normalizeStoredStudy({
+    workspace: normalizeStudyWorkspace(
+      normalizedPrimary.workspace ?? normalizedFallback.workspace,
+    ),
     patientProfile: mergePatientProfile(
       normalizedPrimary.patientProfile,
       normalizedFallback.patientProfile,
@@ -239,11 +244,15 @@ export function mergeStudyDashboard(primary, fallback) {
   });
 }
 
-function serializeFile(file, kind) {
+function serializeFile(file, kind, options = {}) {
+  const includeContent = options.includeContent !== false;
+
   return {
     id: randomUUID(),
     name: file.originalname,
-    url: `data:${file.mimetype || "application/octet-stream"};base64,${file.buffer.toString("base64")}`,
+    url: includeContent
+      ? `data:${file.mimetype || "application/octet-stream"};base64,${file.buffer.toString("base64")}`
+      : null,
     fileType: kind === "study-image" ? inferStudyFileType(file.originalname, file.mimetype) : null,
     reportType: kind === "pdf" ? "AI_REPORT" : null,
     modality: "CT",
@@ -253,8 +262,9 @@ function serializeFile(file, kind) {
   };
 }
 
-function createBaseStudy(payload) {
+function createBaseStudy(payload, options = {}) {
   return normalizeStoredStudy({
+    workspace: normalizeStudyWorkspace(payload.studyWorkspace),
     patientProfile: {
       crNo: payload.crNo,
       patientName: payload.patientName,
@@ -269,7 +279,7 @@ function createBaseStudy(payload) {
     },
     radiologyReport: null,
     aiReport: null,
-    studyImages: payload.files.map((file) => serializeFile(file, "study-image")),
+    studyImages: payload.files.map((file) => serializeFile(file, "study-image", options)),
     status: {
       overallStatus: "pending",
       clinicalStatus: "pending",
@@ -297,16 +307,18 @@ export async function findStoredStudy(crNo) {
   return study ? normalizeStoredStudy(clone(study)) : null;
 }
 
-export async function listStoredStudySummaries() {
+export async function listStoredStudySummaries(workspace) {
   const state = await readState();
+  const normalizedWorkspace = workspace ? normalizeStudyWorkspace(workspace) : null;
 
   return Object.values(state.studies)
     .map((study) => normalizeStudySummary(normalizeStoredStudy(clone(study))))
+    .filter((study) => !normalizedWorkspace || study.workspace === normalizedWorkspace)
     .sort((left, right) => right.crNo.localeCompare(left.crNo));
 }
 
-export async function listDemoStudySummaries() {
-  return listStoredStudySummaries();
+export async function listDemoStudySummaries(workspace) {
+  return listStoredStudySummaries(workspace);
 }
 
 export async function getDemoStudy(crNo) {
@@ -329,8 +341,8 @@ export async function upsertStoredStudy(study) {
   return clone(state.studies[normalizedStudy.patientProfile.crNo]);
 }
 
-export async function seedStoredStudy(payload) {
-  const draftStudy = createBaseStudy(payload);
+export async function seedStoredStudy(payload, options = {}) {
+  const draftStudy = createBaseStudy(payload, options);
   return upsertStoredStudy(draftStudy);
 }
 
@@ -366,11 +378,11 @@ export async function updateDemoPatient(crNo, payload) {
   return clone(state.studies[crNo]);
 }
 
-export async function uploadDemoStudyImages(crNo, files) {
+export async function uploadDemoStudyImages(crNo, files, options = {}) {
   const state = await readState();
   const study = await getStudyRecord(state, crNo);
 
-  study.studyImages.push(...files.map((file) => serializeFile(file, "study-image")));
+  study.studyImages.push(...files.map((file) => serializeFile(file, "study-image", options)));
   state.studies[crNo] = normalizeStoredStudy(study);
   await writeState(state);
 
@@ -410,11 +422,11 @@ export async function saveDemoRadiology(crNo, reportText, userName) {
   return clone(state.studies[crNo]);
 }
 
-export async function saveDemoAiReport(crNo, file) {
+export async function saveDemoAiReport(crNo, file, options = {}) {
   const state = await readState();
   const study = await getStudyRecord(state, crNo);
 
-  study.aiReport = serializeFile(file, "pdf");
+  study.aiReport = serializeFile(file, "pdf", options);
   state.studies[crNo] = normalizeStoredStudy(study);
   await writeState(state);
 

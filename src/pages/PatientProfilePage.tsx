@@ -1,11 +1,15 @@
+import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { api, createEmptyPulmonaryForm, type PulmonaryFormValues } from "@/lib/api";
+import { api, createEmptyPulmonaryForm, type PulmonaryFormValues, type UploadProgressSnapshot } from "@/lib/api";
+import { STUDY_WORKSPACES } from "@/lib/study-workspaces";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ImageViewer } from "@/components/patient/ImageViewer";
 import { ClinicalForm } from "@/components/patient/ClinicalForm";
@@ -19,6 +23,7 @@ export default function PatientProfilePage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { hasPermission, user } = useAuth();
+  const [imageUploadProgress, setImageUploadProgress] = useState<UploadProgressSnapshot | null>(null);
 
   const studyQuery = useQuery({
     queryKey: ["study", crNo],
@@ -79,13 +84,18 @@ export default function PatientProfilePage() {
   });
 
   const uploadImagesMutation = useMutation({
-    mutationFn: (files: File[]) => api.uploadStudyImages(crNo ?? "", files),
+    mutationFn: (files: File[]) =>
+      api.uploadStudyImages(crNo ?? "", files, {
+        onProgress: (progress) => setImageUploadProgress(progress),
+      }),
     onSuccess: (dashboard) => {
       queryClient.setQueryData(["study", crNo], dashboard);
       queryClient.invalidateQueries({ queryKey: ["studies"] });
+      setImageUploadProgress(null);
       toast({ title: "Study images uploaded", description: "The study files were uploaded successfully." });
     },
     onError: (error) => {
+      setImageUploadProgress(null);
       toast({
         title: "Image upload failed",
         description: error instanceof Error ? error.message : "Unable to upload study files.",
@@ -116,6 +126,7 @@ export default function PatientProfilePage() {
 
   const study = studyQuery.data;
   const patient = study.patientProfile;
+  const workspaceConfig = STUDY_WORKSPACES[study.workspace];
   const aiStatus = study.status.aiStatus === "in-progress" ? "processing" : study.status.aiStatus;
   const pulmonaryNotesCount = Object.entries(study.pulmonaryForm ?? {}).some(
     ([key, value]) => !["updatedAt", "updatedBy"].includes(key) && String(value ?? "").trim().length > 0,
@@ -126,13 +137,16 @@ export default function PatientProfilePage() {
   return (
     <div className="space-y-6">
       <div className="flex items-start gap-4">
-        <Button variant="ghost" onClick={() => navigate(-1)} className="shrink-0">
+        <Button variant="ghost" onClick={() => navigate(`/studies/${study.workspace}`)} className="shrink-0">
           <ArrowLeft className="h-4 w-4" />
           Back
         </Button>
         <div className="flex-1">
           <div className="flex items-center gap-3 flex-wrap">
             <h2 className="text-2xl font-heading font-bold text-foreground">{patient.patientName}</h2>
+            <Badge variant="outline" className="text-[11px] uppercase tracking-[0.24em]">
+              {workspaceConfig.title}
+            </Badge>
             <StatusBadge status={study.status.overallStatus} />
           </div>
           <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground flex-wrap">
@@ -142,6 +156,29 @@ export default function PatientProfilePage() {
           </div>
         </div>
       </div>
+
+      {uploadImagesMutation.isPending && (
+        <Card>
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-medium text-foreground">Uploading study images in batches</span>
+              {imageUploadProgress && (
+                <span className="text-muted-foreground">
+                  {imageUploadProgress.completedFiles}/{imageUploadProgress.totalFiles} files
+                </span>
+              )}
+            </div>
+            <Progress
+              value={imageUploadProgress ? Math.round((imageUploadProgress.completedFiles / Math.max(imageUploadProgress.totalFiles, 1)) * 100) : 10}
+            />
+            <p className="text-xs text-muted-foreground">
+              {imageUploadProgress
+                ? `Batch ${imageUploadProgress.batchIndex} of ${imageUploadProgress.totalBatches}`
+                : "Preparing upload batches."}
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {[

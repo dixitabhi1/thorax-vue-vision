@@ -1,3 +1,5 @@
+import type { StudyWorkspace } from "@/lib/study-workspaces";
+
 export type UserRole = "ADMIN" | "DECTROCEL" | "RADIOLOGY" | "PULMONARY";
 export type WorkflowStatus = "pending" | "in-progress" | "complete";
 export type DepartmentStatus = "pending" | "complete";
@@ -54,6 +56,7 @@ export interface AuthSession {
 }
 
 export interface StudySummary {
+  workspace: StudyWorkspace;
   crNo: string;
   patientName: string;
   age: number | null;
@@ -106,6 +109,7 @@ export interface RadiologyAuditEntry {
 }
 
 export interface StudyDashboard {
+  workspace: StudyWorkspace;
   patientProfile: PatientProfile;
   pulmonaryForm: PulmonaryFormValues;
   radiologyReport: RadiologyReportData | null;
@@ -122,6 +126,7 @@ export interface StudyDashboard {
 }
 
 export interface CreateStudyInput {
+  studyWorkspace: StudyWorkspace;
   crNo: string;
   patientName: string;
   age: number | null;
@@ -142,11 +147,26 @@ export interface UpdateRadiologyInput {
   radiologistName: string;
 }
 
+export interface UploadProgressSnapshot {
+  batchIndex: number;
+  totalBatches: number;
+  completedFiles: number;
+  totalFiles: number;
+}
+
 interface ApiRequestOptions {
   method?: string;
   body?: BodyInit | object | null;
   token?: string;
 }
+
+interface UploadOptions {
+  onProgress?: (progress: UploadProgressSnapshot) => void;
+}
+
+const MAX_UPLOAD_BATCH_BYTES = 3 * 1024 * 1024;
+const MAX_UPLOAD_BATCH_FILES = 20;
+const ESTIMATED_MULTIPART_OVERHEAD_PER_FILE = 48 * 1024;
 
 function createEmptyPulmonaryForm(): PulmonaryFormValues {
   return {
@@ -238,6 +258,99 @@ export function createMultipartForm(files: File[], extraFields: Record<string, s
   return formData;
 }
 
+function buildStudiesPath(workspace?: StudyWorkspace) {
+  if (!workspace) {
+    return "/api/studies";
+  }
+
+  const params = new URLSearchParams({
+    workspace,
+  });
+
+  return `/api/studies?${params.toString()}`;
+}
+
+function estimateUploadSize(file: File) {
+  return file.size + ESTIMATED_MULTIPART_OVERHEAD_PER_FILE;
+}
+
+export function splitFilesIntoUploadBatches(
+  files: File[],
+  maxBatchBytes = MAX_UPLOAD_BATCH_BYTES,
+  maxBatchFiles = MAX_UPLOAD_BATCH_FILES,
+) {
+  if (!files.length) {
+    return [];
+  }
+
+  const batches: File[][] = [];
+  let currentBatch: File[] = [];
+  let currentBatchBytes = 0;
+
+  for (const file of files) {
+    const estimatedSize = estimateUploadSize(file);
+
+    if (estimatedSize > maxBatchBytes) {
+      throw new Error(
+        `${file.name} is too large for the web upload route by itself. Upload it through the local server or reduce the file size first.`,
+      );
+    }
+
+    const exceedsFileCount = currentBatch.length >= maxBatchFiles;
+    const exceedsBatchBytes = currentBatchBytes + estimatedSize > maxBatchBytes;
+
+    if (currentBatch.length > 0 && (exceedsFileCount || exceedsBatchBytes)) {
+      batches.push(currentBatch);
+      currentBatch = [];
+      currentBatchBytes = 0;
+    }
+
+    currentBatch.push(file);
+    currentBatchBytes += estimatedSize;
+  }
+
+  if (currentBatch.length > 0) {
+    batches.push(currentBatch);
+  }
+
+  return batches;
+}
+
+async function uploadFilesInBatches(
+  path: string,
+  files: File[],
+  extraFields: Record<string, string>,
+  options: UploadOptions = {},
+) {
+  const batches = splitFilesIntoUploadBatches(files);
+  let latestDashboard: StudyDashboard | null = null;
+  let completedFiles = 0;
+
+  for (const [batchIndex, batch] of batches.entries()) {
+    try {
+      latestDashboard = await apiRequest<StudyDashboard>(path, {
+        method: "POST",
+        body: createMultipartForm(batch, extraFields),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Upload failed.";
+      throw new Error(
+        `${message} Uploaded ${completedFiles} of ${files.length} file(s) before the upload stopped.`,
+      );
+    }
+
+    completedFiles += batch.length;
+    options.onProgress?.({
+      batchIndex: batchIndex + 1,
+      totalBatches: batches.length,
+      completedFiles,
+      totalFiles: files.length,
+    });
+  }
+
+  return latestDashboard;
+}
+
 export const api = {
   login(username: string, password: string) {
     return apiRequest<AuthSession>("/api/auth/login", {
@@ -250,28 +363,40 @@ export const api = {
     return apiRequest<{ username: string; fullName: string; role: UserRole }>("/api/auth/me");
   },
 
-  listStudies() {
-    return apiRequest<StudySummary[]>("/api/studies");
+  listStudies(workspace?: StudyWorkspace) {
+    return apiRequest<StudySummary[]>(buildStudiesPath(workspace));
   },
 
   getStudy(crNo: string) {
     return apiRequest<StudyDashboard>(`/api/studies/${encodeURIComponent(crNo)}`);
   },
 
-  createStudy(input: CreateStudyInput) {
-    const formData = createMultipartForm(input.files, {
-      crNo: input.crNo,
-      patientName: input.patientName,
-      age: input.age === null ? "" : String(input.age),
-      gender: input.gender,
-      phoneNumber: input.phoneNumber,
-      modality: "CT",
+  async createStudy(input: CreateStudyInput, options: UploadOptions = {}) {
+    const metadataResponse = await apiRequest<StudyDashboard>("/api/studies", {
+      method: "POST",
+      body: createMultipartForm([], {
+        studyWorkspace: input.studyWorkspace,
+        crNo: input.crNo,
+        patientName: input.patientName,
+        age: input.age === null ? "" : String(input.age),
+        gender: input.gender,
+        phoneNumber: input.phoneNumber,
+        modality: "CT",
+      }),
     });
 
-    return apiRequest<StudyDashboard>("/api/studies", {
-      method: "POST",
-      body: formData,
-    });
+    if (!input.files.length) {
+      return metadataResponse;
+    }
+
+    const uploadedDashboard = await uploadFilesInBatches(
+      `/api/studies/${encodeURIComponent(input.crNo)}/images`,
+      input.files,
+      {},
+      options,
+    );
+
+    return uploadedDashboard ?? metadataResponse;
   },
 
   updatePatient(crNo: string, input: UpdatePatientProfileInput) {
@@ -281,11 +406,17 @@ export const api = {
     });
   },
 
-  uploadStudyImages(crNo: string, files: File[]) {
-    return apiRequest<StudyDashboard>(`/api/studies/${encodeURIComponent(crNo)}/images`, {
-      method: "POST",
-      body: createMultipartForm(files, {}),
-    });
+  uploadStudyImages(crNo: string, files: File[], options: UploadOptions = {}) {
+    if (!files.length) {
+      return Promise.reject(new Error("Select at least one study file to upload."));
+    }
+
+    return uploadFilesInBatches(
+      `/api/studies/${encodeURIComponent(crNo)}/images`,
+      files,
+      {},
+      options,
+    );
   },
 
   saveClinical(crNo: string, formValues: Partial<Record<PulmonaryFieldKey, string>>) {

@@ -29,15 +29,22 @@ function isPreviewableImage(file: StudyFile | undefined) {
 
 export function ImageViewer({ files, canUpload, onUpload, uploading }: ImageViewerProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [page, setPage] = useState(1);
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  const pageSize = 24;
 
   const selectedFile = files[selectedIndex];
   const previewable = isPreviewableImage(selectedFile);
   const fileSummary = useMemo(
     () => `${files.length} file${files.length === 1 ? "" : "s"} attached`,
     [files.length],
+  );
+  const totalPages = Math.max(Math.ceil(files.length / pageSize), 1);
+  const visibleFiles = useMemo(
+    () => files.slice((page - 1) * pageSize, page * pageSize),
+    [files, page],
   );
 
   const handleFileSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -47,6 +54,7 @@ export function ImageViewer({ files, canUpload, onUpload, uploading }: ImageView
     }
 
     await onUpload(selectedFiles);
+    setPage(1);
     event.target.value = "";
   };
 
@@ -108,23 +116,43 @@ export function ImageViewer({ files, canUpload, onUpload, uploading }: ImageView
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
-                {files.map((file, index) => (
-                  <button
-                    key={file.id}
-                    type="button"
-                    onClick={() => setSelectedIndex(index)}
-                    className={`text-left rounded-lg border p-3 transition-colors ${
-                      index === selectedIndex ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
-                    }`}
-                  >
-                    <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {file.fileType || file.kind || "Study file"}
-                      {file.uploadedAt ? ` · ${new Date(file.uploadedAt).toLocaleString()}` : ""}
-                    </p>
-                  </button>
-                ))}
+                {visibleFiles.map((file, visibleIndex) => {
+                  const index = (page - 1) * pageSize + visibleIndex;
+
+                  return (
+                    <button
+                      key={file.id}
+                      type="button"
+                      onClick={() => setSelectedIndex(index)}
+                      className={`text-left rounded-lg border p-3 transition-colors ${
+                        index === selectedIndex ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
+                      }`}
+                    >
+                      <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {file.fileType || file.kind || "Study file"}
+                        {file.uploadedAt ? ` · ${new Date(file.uploadedAt).toLocaleString()}` : ""}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
+
+              {files.length > pageSize && (
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-muted-foreground">
+                    Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, files.length)} of {files.length} files
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page === 1}>
+                      Previous
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={page === totalPages}>
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <div className="bg-muted rounded-lg flex items-center justify-center min-h-[400px]">

@@ -31,6 +31,7 @@ import {
   normalizeDashboardResponse,
   sanitizePulmonaryPayload,
 } from "./lib/normalize.js";
+import { normalizeStudyWorkspace } from "./lib/study-workspaces.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -50,6 +51,7 @@ const createStudySchema = z.object({
     .refine((value) => value === null || Number.isInteger(value), "Age must be a whole number."),
   gender: z.string().trim().optional().transform((value) => value || null),
   phoneNumber: z.string().trim().optional().transform((value) => value || null),
+  studyWorkspace: z.string().trim().optional().transform((value) => normalizeStudyWorkspace(value)),
   modality: z.string().trim().optional().transform((value) => value || "CT"),
 });
 
@@ -112,8 +114,20 @@ async function setDepartmentStatus({ token, crNo, department, status }) {
   });
 }
 
-async function fetchStudyDashboard(token, crNo) {
-  const [dashboardPayload, filesPayload, auditLog] = await Promise.all([
+function getWorkspaceFilter(request) {
+  const rawValue = Array.isArray(request.query.workspace)
+    ? request.query.workspace[0]
+    : request.query.workspace;
+
+  if (!rawValue) {
+    return null;
+  }
+
+  return normalizeStudyWorkspace(String(rawValue));
+}
+
+async function fetchStudyDashboard(token, crNo, workspaceHint = null) {
+  const [dashboardPayload, filesPayload, auditLog, cachedStudy] = await Promise.all([
     requestExternalSafely(
       {
         pathname: `/patients/${encodeURIComponent(crNo)}/dashboard`,
@@ -136,6 +150,7 @@ async function fetchStudyDashboard(token, crNo) {
       [],
     ),
     getRadiologyAuditEntries(crNo),
+    findStoredStudy(crNo),
   ]);
 
   if (!dashboardPayload?.patient_profile) {
@@ -160,6 +175,7 @@ async function fetchStudyDashboard(token, crNo) {
     dashboardPayload,
     filesPayload,
     auditLog,
+    workspace: workspaceHint ?? cachedStudy?.workspace,
   }));
 }
 
@@ -304,9 +320,10 @@ export function createApp() {
 
   app.get("/api/studies", async (request, response) => {
     const session = requireSession(request);
+    const workspaceFilter = getWorkspaceFilter(request);
 
     if (session.kind === "demo") {
-      response.json(await listDemoStudySummaries());
+      response.json(await listDemoStudySummaries(workspaceFilter));
       return;
     }
 
@@ -328,9 +345,9 @@ export function createApp() {
         throw failedResult.reason;
       }
 
-      response.json(await listStoredStudySummaries());
+      response.json(await listStoredStudySummaries(workspaceFilter));
     } catch (error) {
-      const cachedStudies = await listStoredStudySummaries();
+      const cachedStudies = await listStoredStudySummaries(workspaceFilter);
 
       if (cachedStudies.length > 0 && canServeFromCache(error)) {
         response.json(cachedStudies);
@@ -408,10 +425,12 @@ export function createApp() {
     await seedStoredStudy({
       ...payload,
       files,
+    }, {
+      includeContent: false,
     });
 
     try {
-      const dashboard = await fetchStudyDashboard(token, payload.crNo);
+      const dashboard = await fetchStudyDashboard(token, payload.crNo, payload.studyWorkspace);
       response.status(201).json(dashboard);
     } catch (error) {
       const cachedDashboard = await getStoredStudyDashboard(payload.crNo);
@@ -460,6 +479,7 @@ export function createApp() {
     }
 
     const token = session.token;
+    const cachedStudy = await findStoredStudy(request.params.crNo);
 
     await requestExternal({
       pathname: `/patients/${encodeURIComponent(request.params.crNo)}`,
@@ -479,8 +499,11 @@ export function createApp() {
       age: payload.age ?? null,
       gender: payload.gender ?? null,
       phoneNumber: payload.phoneNumber ?? null,
+      studyWorkspace: cachedStudy?.workspace,
       modality: "CT",
       files: [],
+    }, {
+      includeContent: false,
     });
 
     await updateDemoPatient(request.params.crNo, payload).catch(() => null);
@@ -529,7 +552,9 @@ export function createApp() {
       ),
     );
 
-    await uploadDemoStudyImages(request.params.crNo, files).catch(() => null);
+    await uploadDemoStudyImages(request.params.crNo, files, {
+      includeContent: false,
+    }).catch(() => null);
 
     try {
       const dashboard = await fetchStudyDashboard(token, request.params.crNo);
@@ -721,7 +746,9 @@ export function createApp() {
       status: "COMPLETED",
     });
 
-    await saveDemoAiReport(request.params.crNo, file).catch(() => null);
+    await saveDemoAiReport(request.params.crNo, file, {
+      includeContent: false,
+    }).catch(() => null);
 
     try {
       const dashboard = await fetchStudyDashboard(token, request.params.crNo);

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { normalizeStudyWorkspace } from "./study-workspaces.js";
 
 export const PULMONARY_FIELDS = [
   "cough",
@@ -311,7 +312,7 @@ export function normalizeStudyStatus({ statusRecord, hasPulmonary, hasRadiology,
   };
 }
 
-export function normalizeDashboardResponse({ crNo, dashboardPayload, filesPayload, auditLog }) {
+export function normalizeDashboardResponse({ crNo, dashboardPayload, filesPayload, auditLog, workspace }) {
   const patientProfile = normalizePatientProfile(dashboardPayload?.patient_profile ?? { cr_no: crNo });
   const pulmonaryEntries = asList(dashboardPayload?.pulmonary);
   const radiologyEntries = asList(dashboardPayload?.radiology);
@@ -344,6 +345,11 @@ export function normalizeDashboardResponse({ crNo, dashboardPayload, filesPayloa
   });
 
   return {
+    workspace: normalizeStudyWorkspace(
+      workspace ??
+      dashboardPayload?.study_workspace ??
+      dashboardPayload?.studyWorkspace,
+    ),
     patientProfile,
     pulmonaryForm: normalizePulmonaryForm(latestPulmonary),
     radiologyReport: normalizeRadiologyRecord(latestRadiology),
@@ -356,6 +362,7 @@ export function normalizeDashboardResponse({ crNo, dashboardPayload, filesPayloa
 
 export function normalizeStudySummary(dashboard) {
   return {
+    workspace: normalizeStudyWorkspace(dashboard.workspace),
     crNo: dashboard.patientProfile.crNo,
     patientName: dashboard.patientProfile.patientName,
     age: dashboard.patientProfile.age,

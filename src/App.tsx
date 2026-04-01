@@ -12,6 +12,7 @@ import StudyAnalysisPage from "./pages/StudyAnalysisPage";
 import PatientsPage from "./pages/PatientsPage";
 import PatientProfilePage from "./pages/PatientProfilePage";
 import NotFound from "./pages/NotFound";
+import { DEFAULT_STUDY_WORKSPACE } from "./lib/study-workspaces";
 
 const queryClient = new QueryClient();
 
@@ -35,6 +36,10 @@ const App = () => (
             />
             <Route
               path="/studies"
+              element={<Navigate to={`/studies/${DEFAULT_STUDY_WORKSPACE}`} replace />}
+            />
+            <Route
+              path="/studies/:workspace"
               element={
                 <ProtectedRoute permission="view:studies">
                   <AppLayout><StudyAnalysisPage /></AppLayout>
