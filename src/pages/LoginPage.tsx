@@ -43,15 +43,18 @@ export default function LoginPage() {
             <Shield className="h-8 w-8 text-primary" />
           </div>
           <h1 className="font-heading text-xl font-bold text-foreground">
-            SGPGIMS Dectrocel Study workspace
+            SGPGIMS Study Dashboard
           </h1>
+          <p className="text-sm text-muted-foreground">
+            Clinical operations workspace for thorax workflow coordination
+          </p>
         </div>
 
         <Card>
           <CardHeader className="space-y-1">
             <CardTitle className="text-lg font-heading">Sign In</CardTitle>
             <CardDescription>
-              Use your assigned SGPGI thorax platform credentials.
+              Use your assigned SGPGIMS thorax workspace credentials.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -87,7 +90,7 @@ export default function LoginPage() {
             </form>
 
             <div className="mt-4 rounded-md bg-muted p-3 text-xs text-muted-foreground">
-              The app now authenticates against the backend API through the local server proxy.
+              The app signs in through the local backend proxy so patient workflow data can stay in sync.
             </div>
           </CardContent>
         </Card>

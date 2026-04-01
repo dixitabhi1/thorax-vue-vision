@@ -37,7 +37,7 @@ const INITIAL_FORM: CreateStudyInput = {
 };
 
 export default function StudyAnalysisPage() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -92,130 +92,143 @@ export default function StudyAnalysisPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-heading font-bold text-foreground">Study Analysis</h2>
-          <p className="text-muted-foreground">Create thorax studies and track department progress</p>
-        </div>
-        {hasPermission("create:study") && (
-          <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                New Study
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-lg">
-              <DialogHeader>
-                <DialogTitle className="font-heading">Create New Study</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleCreateStudy} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+      <Card>
+        <CardContent className="p-6 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-2">
+            <div className="inline-flex rounded-full border px-3 py-1 text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground">
+              CT Thorax Lane
+            </div>
+            <div>
+              <h2 className="text-2xl font-heading font-bold text-foreground">CT Thorax Study</h2>
+              <p className="max-w-2xl text-muted-foreground">
+                Coordinate CT thorax cases across pulmonary, radiology, and Dectrocel while each department keeps the same
+                cr_no-linked record in sync.
+              </p>
+            </div>
+            <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground/80">
+              Signed in as {user?.role ?? "USER"} in {user?.name ?? "SGPGIMS"} workspace
+            </p>
+          </div>
+          {hasPermission("create:study") && (
+            <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+              <DialogTrigger asChild>
+                <Button className="min-w-44">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Register CT case
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle className="font-heading">Register CT thorax case</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleCreateStudy} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="crNo">CR Number</Label>
+                      <Input
+                        id="crNo"
+                        placeholder="CR-2026-0001"
+                        value={formState.crNo}
+                        onChange={(event) => setFormState((current) => ({ ...current, crNo: event.target.value }))}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="phoneNumber">Phone Number</Label>
+                      <Input
+                        id="phoneNumber"
+                        placeholder="Patient phone"
+                        value={formState.phoneNumber}
+                        onChange={(event) => setFormState((current) => ({ ...current, phoneNumber: event.target.value }))}
+                      />
+                    </div>
+                  </div>
                   <div className="space-y-2">
-                    <Label htmlFor="crNo">CR Number</Label>
+                    <Label htmlFor="patientName">Patient Name</Label>
                     <Input
-                      id="crNo"
-                      placeholder="CR-2026-0001"
-                      value={formState.crNo}
-                      onChange={(event) => setFormState((current) => ({ ...current, crNo: event.target.value }))}
+                      id="patientName"
+                      placeholder="Full name"
+                      value={formState.patientName}
+                      onChange={(event) => setFormState((current) => ({ ...current, patientName: event.target.value }))}
                       required
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="phoneNumber">Phone Number</Label>
-                    <Input
-                      id="phoneNumber"
-                      placeholder="Patient phone"
-                      value={formState.phoneNumber}
-                      onChange={(event) => setFormState((current) => ({ ...current, phoneNumber: event.target.value }))}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="patientName">Patient Name</Label>
-                  <Input
-                    id="patientName"
-                    placeholder="Full name"
-                    value={formState.patientName}
-                    onChange={(event) => setFormState((current) => ({ ...current, patientName: event.target.value }))}
-                    required
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="age">Age</Label>
-                    <Input
-                      id="age"
-                      type="number"
-                      min={0}
-                      max={120}
-                      value={formState.age ?? ""}
-                      onChange={(event) =>
-                        setFormState((current) => ({
-                          ...current,
-                          age: event.target.value ? Number(event.target.value) : null,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Gender</Label>
-                    <Select
-                      value={formState.gender}
-                      onValueChange={(value) => setFormState((current) => ({ ...current, gender: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="M">Male</SelectItem>
-                        <SelectItem value="F">Female</SelectItem>
-                        <SelectItem value="O">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                {hasPermission("upload:images") && (
-                  <div className="space-y-2">
-                    <Label htmlFor="studyFiles">Study Images</Label>
-                    <div className="border-2 border-dashed rounded-lg p-6 text-center hover:bg-muted/50 transition-colors">
-                      <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                      <p className="text-sm text-muted-foreground mb-3">
-                        Attach DICOM, ZIP, PNG, or JPEG study files
-                      </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="age">Age</Label>
                       <Input
-                        id="studyFiles"
-                        type="file"
-                        multiple
-                        accept=".dcm,.dicom,.zip,.png,.jpg,.jpeg"
+                        id="age"
+                        type="number"
+                        min={0}
+                        max={120}
+                        value={formState.age ?? ""}
                         onChange={(event) =>
                           setFormState((current) => ({
                             ...current,
-                            files: Array.from(event.target.files ?? []),
+                            age: event.target.value ? Number(event.target.value) : null,
                           }))
                         }
                       />
                     </div>
-                    {formState.files.length > 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        {formState.files.length} file(s) selected
-                      </p>
-                    )}
+                    <div className="space-y-2">
+                      <Label>Gender</Label>
+                      <Select
+                        value={formState.gender}
+                        onValueChange={(value) => setFormState((current) => ({ ...current, gender: value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="M">Male</SelectItem>
+                          <SelectItem value="F">Female</SelectItem>
+                          <SelectItem value="O">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                )}
-                <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setShowCreateDialog(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={createStudyMutation.isPending}>
-                    {createStudyMutation.isPending ? "Creating..." : "Create Study"}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
-        )}
-      </div>
+                  {hasPermission("upload:images") && (
+                    <div className="space-y-2">
+                      <Label htmlFor="studyFiles">Study Images</Label>
+                      <div className="border-2 border-dashed rounded-lg p-6 text-center hover:bg-muted/50 transition-colors">
+                        <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                        <p className="text-sm text-muted-foreground mb-3">
+                          Attach DICOM, ZIP, PNG, or JPEG study files
+                        </p>
+                        <Input
+                          id="studyFiles"
+                          type="file"
+                          multiple
+                          accept=".dcm,.dicom,.zip,.png,.jpg,.jpeg"
+                          onChange={(event) =>
+                            setFormState((current) => ({
+                              ...current,
+                              files: Array.from(event.target.files ?? []),
+                            }))
+                          }
+                        />
+                      </div>
+                      {formState.files.length > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          {formState.files.length} file(s) selected
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={() => setShowCreateDialog(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={createStudyMutation.isPending}>
+                      {createStudyMutation.isPending ? "Saving..." : "Register case"}
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="p-4">
@@ -223,7 +236,7 @@ export default function StudyAnalysisPage() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search by patient name or CR number..."
+                placeholder="Search CT thorax cases by CR number or patient name"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 className="pl-9"
@@ -234,7 +247,7 @@ export default function StudyAnalysisPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="all">All workflows</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="in-progress">In Progress</SelectItem>
                 <SelectItem value="complete">Complete</SelectItem>
@@ -245,6 +258,9 @@ export default function StudyAnalysisPage() {
       </Card>
 
       <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="font-heading text-lg">CT thorax workflow table</CardTitle>
+        </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>

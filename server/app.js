@@ -8,11 +8,16 @@ import { appendRadiologyAuditEntry, getRadiologyAuditEntries } from "./lib/audit
 import { findDemoUser, issueDemoToken, normalizeRole, parseDemoToken } from "./lib/demo-auth.js";
 import {
   createDemoStudy,
+  findStoredStudy,
   getDemoStudy,
+  listStoredStudySummaries,
   listDemoStudySummaries,
+  mergeStudyDashboard,
   saveDemoAiReport,
   saveDemoClinical,
   saveDemoRadiology,
+  seedStoredStudy,
+  upsertStoredStudy,
   updateDemoPatient,
   uploadDemoStudyImages,
 } from "./lib/demo-store.js";
@@ -24,7 +29,6 @@ import {
   inferStudyFileType,
   isPdfFile,
   normalizeDashboardResponse,
-  normalizeStudySummary,
   sanitizePulmonaryPayload,
 } from "./lib/normalize.js";
 
@@ -151,12 +155,12 @@ async function fetchStudyDashboard(token, crNo) {
     );
   }
 
-  return normalizeDashboardResponse({
+  return cacheStudyDashboard(normalizeDashboardResponse({
     crNo,
     dashboardPayload,
     filesPayload,
     auditLog,
-  });
+  }));
 }
 
 function normalizeUserPayload(rawUser, fallback = {}) {
@@ -203,6 +207,38 @@ async function getDemoStudyDashboard(crNo) {
     ...dashboard,
     auditLog,
   };
+}
+
+async function getStoredStudyDashboard(crNo) {
+  const [dashboard, auditLog] = await Promise.all([
+    findStoredStudy(crNo),
+    getRadiologyAuditEntries(crNo),
+  ]);
+
+  if (!dashboard) {
+    return null;
+  }
+
+  return mergeStudyDashboard(
+    {
+      ...dashboard,
+      auditLog,
+    },
+    dashboard,
+  );
+}
+
+async function cacheStudyDashboard(dashboard) {
+  const cachedDashboard = await getStoredStudyDashboard(dashboard.patientProfile.crNo);
+  return upsertStoredStudy(mergeStudyDashboard(dashboard, cachedDashboard));
+}
+
+function canServeFromCache(error) {
+  if (error instanceof HttpError) {
+    return error.status === 404 || error.status >= 500;
+  }
+
+  return true;
 }
 
 export function createApp() {
@@ -275,20 +311,34 @@ export function createApp() {
     }
 
     const token = session.token;
-    const patients = await requestExternal({
-      pathname: "/patients",
-      token,
-    });
 
-    const dashboards = await Promise.all(
-      patients.map((patient) => fetchStudyDashboard(token, patient.cr_no)),
-    );
+    try {
+      const patients = await requestExternal({
+        pathname: "/patients",
+        token,
+      });
 
-    response.json(
-      dashboards
-        .map(normalizeStudySummary)
-        .sort((left, right) => right.crNo.localeCompare(left.crNo)),
-    );
+      const dashboardResults = await Promise.allSettled(
+        patients.map((patient) => fetchStudyDashboard(token, patient.cr_no)),
+      );
+      const failedResult = dashboardResults.find((result) => result.status === "rejected");
+      const successfulDashboards = dashboardResults.filter((result) => result.status === "fulfilled");
+
+      if (!successfulDashboards.length && failedResult?.status === "rejected") {
+        throw failedResult.reason;
+      }
+
+      response.json(await listStoredStudySummaries());
+    } catch (error) {
+      const cachedStudies = await listStoredStudySummaries();
+
+      if (cachedStudies.length > 0 && canServeFromCache(error)) {
+        response.json(cachedStudies);
+        return;
+      }
+
+      throw error;
+    }
   });
 
   app.post("/api/studies", upload.array("files"), async (request, response) => {
@@ -355,8 +405,24 @@ export function createApp() {
       ),
     );
 
-    const dashboard = await fetchStudyDashboard(token, payload.crNo);
-    response.status(201).json(dashboard);
+    await seedStoredStudy({
+      ...payload,
+      files,
+    });
+
+    try {
+      const dashboard = await fetchStudyDashboard(token, payload.crNo);
+      response.status(201).json(dashboard);
+    } catch (error) {
+      const cachedDashboard = await getStoredStudyDashboard(payload.crNo);
+
+      if (cachedDashboard && canServeFromCache(error)) {
+        response.status(201).json(cachedDashboard);
+        return;
+      }
+
+      throw error;
+    }
   });
 
   app.get("/api/studies/:crNo", async (request, response) => {
@@ -368,8 +434,20 @@ export function createApp() {
     }
 
     const token = session.token;
-    const dashboard = await fetchStudyDashboard(token, request.params.crNo);
-    response.json(dashboard);
+
+    try {
+      const dashboard = await fetchStudyDashboard(token, request.params.crNo);
+      response.json(dashboard);
+    } catch (error) {
+      const cachedDashboard = await getStoredStudyDashboard(request.params.crNo);
+
+      if (cachedDashboard && canServeFromCache(error)) {
+        response.json(cachedDashboard);
+        return;
+      }
+
+      throw error;
+    }
   });
 
   app.put("/api/studies/:crNo/patient", async (request, response) => {
@@ -395,8 +473,31 @@ export function createApp() {
       },
     });
 
-    const dashboard = await fetchStudyDashboard(token, request.params.crNo);
-    response.json(dashboard);
+    await seedStoredStudy({
+      crNo: request.params.crNo,
+      patientName: payload.patientName,
+      age: payload.age ?? null,
+      gender: payload.gender ?? null,
+      phoneNumber: payload.phoneNumber ?? null,
+      modality: "CT",
+      files: [],
+    });
+
+    await updateDemoPatient(request.params.crNo, payload).catch(() => null);
+
+    try {
+      const dashboard = await fetchStudyDashboard(token, request.params.crNo);
+      response.json(dashboard);
+    } catch (error) {
+      const cachedDashboard = await getStoredStudyDashboard(request.params.crNo);
+
+      if (cachedDashboard && canServeFromCache(error)) {
+        response.json(cachedDashboard);
+        return;
+      }
+
+      throw error;
+    }
   });
 
   app.post("/api/studies/:crNo/images", upload.array("files"), async (request, response) => {
@@ -428,8 +529,21 @@ export function createApp() {
       ),
     );
 
-    const dashboard = await fetchStudyDashboard(token, request.params.crNo);
-    response.json(dashboard);
+    await uploadDemoStudyImages(request.params.crNo, files).catch(() => null);
+
+    try {
+      const dashboard = await fetchStudyDashboard(token, request.params.crNo);
+      response.json(dashboard);
+    } catch (error) {
+      const cachedDashboard = await getStoredStudyDashboard(request.params.crNo);
+
+      if (cachedDashboard && canServeFromCache(error)) {
+        response.json(cachedDashboard);
+        return;
+      }
+
+      throw error;
+    }
   });
 
   app.put("/api/studies/:crNo/clinical", async (request, response) => {
@@ -445,6 +559,7 @@ export function createApp() {
     }
 
     const token = session.token;
+    const currentUser = await resolveCurrentUser(session);
 
     await requestExternal({
       pathname: `/pulmonary/${encodeURIComponent(request.params.crNo)}`,
@@ -460,8 +575,21 @@ export function createApp() {
       status: "COMPLETED",
     });
 
-    const dashboard = await fetchStudyDashboard(token, request.params.crNo);
-    response.json(dashboard);
+    await saveDemoClinical(request.params.crNo, payload, currentUser.fullName).catch(() => null);
+
+    try {
+      const dashboard = await fetchStudyDashboard(token, request.params.crNo);
+      response.json(dashboard);
+    } catch (error) {
+      const cachedDashboard = await getStoredStudyDashboard(request.params.crNo);
+
+      if (cachedDashboard && canServeFromCache(error)) {
+        response.json(cachedDashboard);
+        return;
+      }
+
+      throw error;
+    }
   });
 
   app.put("/api/studies/:crNo/radiology", async (request, response) => {
@@ -530,11 +658,31 @@ export function createApp() {
       status: "COMPLETED",
     });
 
-    const dashboard = await fetchStudyDashboard(token, request.params.crNo);
-    response.json({
-      ...dashboard,
-      auditLog,
-    });
+    await saveDemoRadiology(
+      request.params.crNo,
+      signedReport,
+      currentUser.fullName,
+    ).catch(() => null);
+
+    try {
+      const dashboard = await fetchStudyDashboard(token, request.params.crNo);
+      response.json({
+        ...dashboard,
+        auditLog,
+      });
+    } catch (error) {
+      const cachedDashboard = await getStoredStudyDashboard(request.params.crNo);
+
+      if (cachedDashboard && canServeFromCache(error)) {
+        response.json({
+          ...cachedDashboard,
+          auditLog,
+        });
+        return;
+      }
+
+      throw error;
+    }
   });
 
   app.post("/api/studies/:crNo/ai-report", upload.single("file"), async (request, response) => {
@@ -573,8 +721,21 @@ export function createApp() {
       status: "COMPLETED",
     });
 
-    const dashboard = await fetchStudyDashboard(token, request.params.crNo);
-    response.json(dashboard);
+    await saveDemoAiReport(request.params.crNo, file).catch(() => null);
+
+    try {
+      const dashboard = await fetchStudyDashboard(token, request.params.crNo);
+      response.json(dashboard);
+    } catch (error) {
+      const cachedDashboard = await getStoredStudyDashboard(request.params.crNo);
+
+      if (cachedDashboard && canServeFromCache(error)) {
+        response.json(cachedDashboard);
+        return;
+      }
+
+      throw error;
+    }
   });
 
   if (hasDistBundle) {

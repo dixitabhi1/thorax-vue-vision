@@ -117,12 +117,18 @@ export default function PatientProfilePage() {
   const study = studyQuery.data;
   const patient = study.patientProfile;
   const aiStatus = study.status.aiStatus === "in-progress" ? "processing" : study.status.aiStatus;
+  const pulmonaryNotesCount = Object.entries(study.pulmonaryForm ?? {}).some(
+    ([key, value]) => !["updatedAt", "updatedBy"].includes(key) && String(value ?? "").trim().length > 0,
+  )
+    ? 1
+    : 0;
 
   return (
     <div className="space-y-6">
       <div className="flex items-start gap-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
+        <Button variant="ghost" onClick={() => navigate(-1)} className="shrink-0">
           <ArrowLeft className="h-4 w-4" />
+          Back
         </Button>
         <div className="flex-1">
           <div className="flex items-center gap-3 flex-wrap">
@@ -137,12 +143,27 @@ export default function PatientProfilePage() {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {[
+          { label: "Pulmonary Notes", value: pulmonaryNotesCount },
+          { label: "PDF Reports", value: study.aiReport ? 1 : 0 },
+          { label: "Study Files", value: study.studyImages.length },
+        ].map((item) => (
+          <Card key={item.label}>
+            <CardContent className="p-4">
+              <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">{item.label}</p>
+              <p className="mt-3 text-3xl font-heading font-bold text-foreground">{item.value}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: "Overall", status: study.status.overallStatus },
-          { label: "Clinical", status: study.status.clinicalStatus },
+          { label: "Pulmonary", status: study.status.clinicalStatus },
           { label: "Radiology", status: study.status.radiologyStatus },
-          { label: "AI Report", status: aiStatus },
+          { label: "Dectrocel", status: aiStatus },
         ].map((item) => (
           <Card key={item.label}>
             <CardContent className="p-4 flex items-center justify-between">
@@ -153,15 +174,15 @@ export default function PatientProfilePage() {
         ))}
       </div>
 
-      <Tabs defaultValue="images" className="space-y-4">
+      <Tabs defaultValue="study-files" className="space-y-4">
         <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="images">Images</TabsTrigger>
-          <TabsTrigger value="clinical">Clinical</TabsTrigger>
+          <TabsTrigger value="study-files">Study Files</TabsTrigger>
+          <TabsTrigger value="clinical">Pulmonary</TabsTrigger>
           <TabsTrigger value="radiology">Radiology</TabsTrigger>
-          <TabsTrigger value="ai">AI Report</TabsTrigger>
+          <TabsTrigger value="ai">Dectrocel</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="images">
+        <TabsContent value="study-files">
           <ImageViewer
             files={study.studyImages}
             canUpload={hasPermission("upload:images")}

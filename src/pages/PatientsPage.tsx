@@ -27,8 +27,8 @@ export default function PatientsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-heading font-bold text-foreground">Patient Profiles</h2>
-        <p className="text-muted-foreground">View consolidated patient data across all thorax studies</p>
+        <h2 className="text-2xl font-heading font-bold text-foreground">Patient Records</h2>
+        <p className="text-muted-foreground">Open the consolidated case workspace for pulmonary, radiology, and Dectrocel updates.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -53,7 +53,7 @@ export default function PatientsPage() {
               </div>
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>{study.age ?? "NA"}y / {study.gender || "NA"}</span>
-                <span>{study.phoneNumber || "Phone NA"}</span>
+                <span>{study.phoneNumber || "Phone not recorded"}</span>
               </div>
               <div className="flex gap-2 mt-3 flex-wrap">
                 <StatusBadge status={study.clinicalStatus} />

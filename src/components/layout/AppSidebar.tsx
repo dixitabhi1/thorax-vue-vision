@@ -20,9 +20,16 @@ import {
 
 const NAV_ITEMS = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, permission: "view:dashboard" },
-  { title: "Study Analysis", url: "/studies", icon: FileSearch, permission: "view:studies" },
-  { title: "Patient Profiles", url: "/patients", icon: UserRound, permission: "view:patients" },
+  { title: "CT Thorax Study", url: "/studies", icon: FileSearch, permission: "view:studies" },
+  { title: "Patient Records", url: "/patients", icon: UserRound, permission: "view:patients" },
 ];
+
+const DEPARTMENT_LABELS = {
+  ADMIN: "Administration",
+  DECTROCEL: "Dectrocel",
+  RADIOLOGY: "Radiodiagnosis",
+  PULMONARY: "Pulmonary",
+} as const;
 
 export function AppSidebar() {
   const { state } = useSidebar();
@@ -37,9 +44,14 @@ export function AppSidebar() {
           <div className="flex items-center gap-2">
             <Shield className="h-6 w-6 text-sidebar-primary shrink-0" />
             {!collapsed && (
-              <span className="font-heading text-sm font-semibold text-sidebar-foreground truncate">
-                SGPGIMS
-              </span>
+              <div className="min-w-0">
+                <p className="font-heading text-sm font-semibold text-sidebar-foreground truncate">
+                  SGPGIMS Study Dashboard
+                </p>
+                <p className="text-[11px] text-sidebar-foreground/60 truncate">
+                  Clinical operations workspace
+                </p>
+              </div>
             )}
           </div>
         </div>
@@ -70,9 +82,9 @@ export function AppSidebar() {
         {/* Role info at bottom */}
         {!collapsed && user && (
           <div className="mt-auto p-4 border-t border-sidebar-border">
-            <p className="text-xs text-sidebar-foreground/60">Logged in as</p>
+            <p className="text-xs text-sidebar-foreground/60">Active department</p>
             <p className="text-sm font-medium text-sidebar-foreground truncate">{user.name}</p>
-            <p className="text-xs text-sidebar-primary">{user.role}</p>
+            <p className="text-xs text-sidebar-primary">{DEPARTMENT_LABELS[user.role]}</p>
           </div>
         )}
       </SidebarContent>
